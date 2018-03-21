@@ -1,0 +1,173 @@
+
+--1.修改失败为成功
+select * from tp_dis_tx_contract_fail2;
+
+--查询小于15点后的失败交易
+truncate table tp_dis_tx_contract_fail2;
+insert into tp_dis_tx_contract_fail2
+select a.*
+  from tp_dis_tx_contract a
+ where a.ta_trade_dt = to_char(sysdate, 'yyyyMMdd') and a.busi_code in ( '0221','024' ) and a.tx_app_flag = '1' and a.dis_code = 'LCT00K001' ;
+   
+--fail
+select * from tp_dis_tx_contract t1 where t1.contract_no in (select contract_no from tp_dis_tx_contract_fail2);
+
+
+update tp_dis_tx_contract set tx_app_flag = '0', tx_ack_flag = '1', tx_comp_flag = '0', trans_ratio = '', trans_status = '1', from_busi_code = '024'  where contract_no in (select contract_no from tp_dis_tx_contract_fail2);
+update tp_dis_trade_app_rec set tx_app_flag = '0', tx_ack_flag = '1', tx_comp_flag = '0', trans_ratio = '', trans_status = '1', from_busi_code = '024' where contract_no in (select contract_no from tp_dis_tx_contract_fail2);
+
+
+--success
+select * from tp_dis_tx_contract t1 where t1.contract_no in (select contract_no from tp_dis_tx_contract_fail2);
+select * from tp_dis_trade_app_rec t1 where t1.contract_no in (select contract_no from tp_dis_tx_contract_fail2);
+
+--2.修复份额不一致数据
+create table as_dis_fund_bal_frz_d19
+as 
+select c.dis_fund_tx_acct_no,
+               'LCT00K001' dis_code,
+               c.protocal_no,
+               to_char(sysdate, 'yyyyMMdd') TA_TRADE_DT,
+               replace(c.dis_fund_tx_acct_no, 'LCT00K001', '') fund_tx_acct_no,
+               c.fund_acct_no,
+               c.fund_code,
+               c.share_class,
+               c.frz_vol app_vol,
+               SYSDATE frz_vol,
+               c.cust_bank_id,
+               nvl(d.TODAY_FRZN_VOL, 0) TODAY_FRZN_VOL,
+               nvl(f.fast_frz_vol, 0) fast_frz_vol
+          from (select t.dis_fund_tx_acct_no,
+                       t.fund_acct_no,
+                       t.fund_code,
+                       t.protocal_no,
+                       t.share_class,
+                       t.cust_bank_id,
+                       t.ta_trade_dt,
+                       sum(t.app_vol) frz_vol
+                  from trade.tp_dis_trade_app_rec t
+                 where t.deal_type = '1'
+                   and t.busi_code in
+                       ('024', '026', '028', '036', '089', '098')
+                   and t.tx_app_flag = '0'
+                   and t.tx_chk_flag in ('0', '4')
+                   and t.tx_pmt_flag in ('0', '2')
+                   and t.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+                   and t.dis_code = 'LCT00K001'
+                 group by t.dis_fund_tx_acct_no,
+                          t.fund_acct_no,
+                          t.fund_code,
+                          t.protocal_no,
+                          t.share_class,
+                          t.cust_bank_id,
+                          ta_trade_dt) c
+          left join trade.as_dis_fund_bal_frz d
+            on c.dis_fund_tx_acct_no = d.dis_fund_tx_acct_no
+           and c.fund_acct_no = d.fund_acct_no
+           and c.fund_code = d.fund_code
+           and c.protocal_no = d.protocal_no
+           and c.share_class = d.share_class
+           and c.cust_bank_id = d.cust_bank_id
+           and c.ta_trade_dt = d.ta_trade_dt
+          left join trade.as_dis_fund_bal_fast_frz f
+            on c.dis_fund_tx_acct_no = f.dis_fund_tx_acct_no
+           and c.fund_acct_no = f.fund_acct_no
+           and c.fund_code = f.fund_code
+           and c.protocal_no = f.protocal_no
+           and c.share_class = f.share_class
+           and c.cust_bank_id = f.cust_bank_id
+           and c.ta_trade_dt = f.ta_trade_dt
+         where c.frz_vol <>
+               (nvl(d.TODAY_FRZN_VOL, 0) + nvl(f.fast_frz_vol, 0));
+			   
+
+
+select * from as_dis_fund_bal_frz_d19;
+
+ delete from as_dis_fund_bal_frz t
+  where exists (select 1
+           from as_dis_fund_bal_frz_d19 a
+          where a.dis_fund_tx_acct_no = t.dis_fund_tx_acct_no
+            and a.protocal_no = t.protocal_no
+            and a.fund_acct_no = t.fund_acct_no
+            and a.fund_code = t.fund_code
+            and a.ta_trade_dt = t.ta_trade_dt
+            and a.cust_bank_id = t.cust_bank_id);
+ 
+ insert into as_dis_fund_bal_frz
+   select dis_fund_tx_acct_no,
+          dis_code,
+          protocal_no,
+          TA_TRADE_DT,
+          fund_tx_acct_no,
+          fund_acct_no,
+          fund_code,
+          share_class,
+          app_vol,
+          sysdate,
+          cust_bank_id
+     from as_dis_fund_bal_frz_d19;
+
+--检查数据为0再提交
+select c.dis_fund_tx_acct_no,
+               'LCT00K001' dis_code,
+               c.protocal_no,
+               to_char(sysdate, 'yyyyMMdd') TA_TRADE_DT,
+               replace(c.dis_fund_tx_acct_no, 'LCT00K001', '') fund_tx_acct_no,
+               c.fund_acct_no,
+               c.fund_code,
+               c.share_class,
+               c.frz_vol app_vol,
+               SYSDATE frz_vol,
+               c.cust_bank_id,
+               nvl(d.TODAY_FRZN_VOL, 0) TODAY_FRZN_VOL,
+               nvl(f.fast_frz_vol, 0) fast_frz_vol
+          from (select t.dis_fund_tx_acct_no,
+                       t.fund_acct_no,
+                       t.fund_code,
+                       t.protocal_no,
+                       t.share_class,
+                       t.cust_bank_id,
+                       t.ta_trade_dt,
+                       sum(t.app_vol) frz_vol
+                  from trade.tp_dis_trade_app_rec t
+                 where t.deal_type = '1'
+                   and t.busi_code in
+                       ('024', '026', '028', '036', '089', '098')
+                   and t.tx_app_flag = '0'
+                   and t.tx_chk_flag in ('0', '4')
+                   and t.tx_pmt_flag in ('0', '2')
+                   and t.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+                   and t.dis_code = 'LCT00K001'
+                 group by t.dis_fund_tx_acct_no,
+                          t.fund_acct_no,
+                          t.fund_code,
+                          t.protocal_no,
+                          t.share_class,
+                          t.cust_bank_id,
+                          ta_trade_dt) c
+          left join trade.as_dis_fund_bal_frz d
+            on c.dis_fund_tx_acct_no = d.dis_fund_tx_acct_no
+           and c.fund_acct_no = d.fund_acct_no
+           and c.fund_code = d.fund_code
+           and c.protocal_no = d.protocal_no
+           and c.share_class = d.share_class
+           and c.cust_bank_id = d.cust_bank_id
+           and c.ta_trade_dt = d.ta_trade_dt
+          left join trade.as_dis_fund_bal_fast_frz f
+            on c.dis_fund_tx_acct_no = f.dis_fund_tx_acct_no
+           and c.fund_acct_no = f.fund_acct_no
+           and c.fund_code = f.fund_code
+           and c.protocal_no = f.protocal_no
+           and c.share_class = f.share_class
+           and c.cust_bank_id = f.cust_bank_id
+           and c.ta_trade_dt = f.ta_trade_dt
+         where c.frz_vol <>
+               (nvl(d.TODAY_FRZN_VOL, 0) + nvl(f.fast_frz_vol, 0));
+               
+
+
+强赎配置
+insert into bp_fund_tx_dis_cfg values ('20180319','C40265','A','LCT00K001','0','0','1',sysdate,sysdate);
+               
+               
