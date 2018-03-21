@@ -1,0 +1,201 @@
+create table tp_dis_trade_app_rec_cd204 as 
+    select a.* 
+    from tp_dis_trade_app_rec a ,tp_dis_tx_contract_t024 b
+    where a.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')  and a.contract_no = b.contract_no
+    and a.dis_code = 'LCT00K001';
+
+select * from tp_dis_trade_app_rec_cd204;
+
+create table as_dis_fund_bal_frz_cd204
+as
+select c.dis_fund_tx_acct_no,
+               'LCT00K001' dis_code,
+               c.protocal_no,
+               to_char(sysdate, 'yyyyMMdd') TA_TRADE_DT,
+               replace(c.dis_fund_tx_acct_no, 'LCT00K001', '') fund_tx_acct_no,
+               c.fund_acct_no,
+               c.fund_code,
+               c.share_class,
+               c.frz_vol app_vol,
+               SYSDATE dt,
+               c.cust_bank_id,
+               nvl(d.TODAY_FRZN_VOL, 0) TODAY_FRZN_VOL,
+               nvl(f.fast_frz_vol, 0) fast_frz_vol
+          from (select t.dis_fund_tx_acct_no,
+                       t.fund_acct_no,
+                       t.fund_code,
+                       t.protocal_no,
+                       t.share_class,
+                       t.cust_bank_id,
+                       t.ta_trade_dt,
+                       sum(t.app_vol) frz_vol
+                  from trade.tp_dis_trade_app_rec_cd204 t
+                 where t.deal_type = '1'
+                   and t.busi_code in
+                       ('024', '026', '028', '036', '089', '098')
+                   and t.ta_trade_dt = to_char(sysdate, 'yyyyMMdd') 
+                   and t.dis_code = 'LCT00K001'
+                 group by t.dis_fund_tx_acct_no,
+                          t.fund_acct_no,
+                          t.fund_code,
+                          t.protocal_no,
+                          t.share_class,
+                          t.cust_bank_id,
+                          ta_trade_dt) c
+          left join trade.as_dis_fund_bal_frz d
+            on c.dis_fund_tx_acct_no = d.dis_fund_tx_acct_no
+           and c.fund_acct_no = d.fund_acct_no
+           and c.fund_code = d.fund_code
+           and c.protocal_no = d.protocal_no
+           and c.share_class = d.share_class
+           and c.cust_bank_id = d.cust_bank_id
+           and c.ta_trade_dt = d.ta_trade_dt
+          left join trade.as_dis_fund_bal_fast_frz f
+            on c.dis_fund_tx_acct_no = f.dis_fund_tx_acct_no
+           and c.fund_acct_no = f.fund_acct_no
+           and c.fund_code = f.fund_code
+           and c.protocal_no = f.protocal_no
+           and c.share_class = f.share_class
+           and c.cust_bank_id = f.cust_bank_id
+           and c.ta_trade_dt = f.ta_trade_dt
+         where c.frz_vol =
+               (nvl(d.TODAY_FRZN_VOL, 0) + nvl(f.fast_frz_vol, 0));
+
+
+--查询冻结份额条数
+select * from as_dis_fund_bal_frz_cd204;
+
+--删除撤单冻结份额
+ delete from as_dis_fund_bal_frz t
+  where t.dis_code = 'LCT00K001' and t.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+     and exists (select 1
+           from as_dis_fund_bal_frz_cd204 a
+          where a.dis_fund_tx_acct_no = t.dis_fund_tx_acct_no
+            and a.protocal_no = t.protocal_no
+            and a.fund_code = t.fund_code
+            and a.fund_acct_no = t.fund_acct_no
+            and a.cust_bank_id = t.cust_bank_id
+            and a.ta_trade_dt = t.ta_trade_dt);
+ 
+--新增撤单冻结份额为0 ，可不新增
+ insert into as_dis_fund_bal_frz
+   select dis_fund_tx_acct_no,
+          dis_code,
+          protocal_no,
+          TA_TRADE_DT,
+          fund_tx_acct_no,
+          fund_acct_no,
+          fund_code,
+          share_class,
+          0 ,
+          sysdate,
+          cust_bank_id
+     from as_dis_fund_bal_frz_cd204;
+
+--查询冻结份额
+select * from as_dis_fund_bal_frz t 
+  where t.dis_code = 'LCT00K001' and t.ta_trade_dt = to_char(sysdate, 'yyyyMMdd') 
+     and exists (select 1
+           from as_dis_fund_bal_frz_cd204 a
+          where a.dis_fund_tx_acct_no = t.dis_fund_tx_acct_no
+            and a.protocal_no = t.protocal_no
+            and a.fund_code = t.fund_code
+            and a.fund_acct_no = t.fund_acct_no
+            and a.cust_bank_id = t.cust_bank_id
+            and a.ta_trade_dt = t.ta_trade_dt) and t.today_frzn_vol > 0;
+           
+----
+--反向
+select *
+  from trade.as_dis_fund_bal_frz fz
+  left join (select t.dis_fund_tx_acct_no,
+                    t.fund_acct_no,
+                    t.fund_code,
+                    t.protocal_no,
+                    t.share_class,
+                    t.cust_bank_id,
+                    t.ta_trade_dt,
+                    sum(t.app_vol) frz_vol
+               from trade.tp_dis_trade_app_rec t
+              where t.busi_code in
+                    ('024', '026', '028', '036', '089', '098')
+                and t.tx_app_flag = '0'
+                and t.tx_chk_flag in ('0', '4')
+                and t.tx_pmt_flag in ('0', '2')
+                and t.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+                and t.dis_code = 'LCT00K001'
+              group by t.dis_fund_tx_acct_no,
+                       t.fund_acct_no,
+                       t.fund_code,
+                       t.protocal_no,
+                       t.share_class,
+                       t.cust_bank_id,
+                       t.ta_trade_dt) c
+    on c.dis_fund_tx_acct_no = fz.dis_fund_tx_acct_no
+   and c.fund_acct_no = fz.fund_acct_no
+   and c.fund_code = fz.fund_code
+   and c.protocal_no = fz.protocal_no
+   and c.share_class = fz.share_class
+   and c.cust_bank_id = fz.cust_bank_id
+   and c.ta_trade_dt = fz.ta_trade_dt
+ where nvl(fz.TODAY_FRZN_VOL, 0) <> nvl(c.frz_vol, 0)
+   and fz.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+   and fz.dis_code = 'LCT00K001';
+
+--正向
+select c.dis_fund_tx_acct_no,
+               'LCT00K001' dis_code,
+               c.protocal_no,
+               to_char(sysdate, 'yyyyMMdd') TA_TRADE_DT,
+               replace(c.dis_fund_tx_acct_no, 'LCT00K001', '') fund_tx_acct_no,
+               c.fund_acct_no,
+               c.fund_code,
+               c.share_class,
+               c.frz_vol app_vol,
+               SYSDATE frz_vol,
+               c.cust_bank_id,
+               nvl(d.TODAY_FRZN_VOL, 0) TODAY_FRZN_VOL,
+               nvl(f.fast_frz_vol, 0) fast_frz_vol
+          from (select t.dis_fund_tx_acct_no,
+                       t.fund_acct_no,
+                       t.fund_code,
+                       t.protocal_no,
+                       t.share_class,
+                       t.cust_bank_id,
+                       t.ta_trade_dt,
+                       sum(t.app_vol) frz_vol
+                  from trade.tp_dis_trade_app_rec t
+                 where t.deal_type = '1'
+                   and t.busi_code in
+                       ('024', '026', '028', '036', '089', '098')
+                   and t.tx_app_flag = '0'
+                   and t.tx_chk_flag in ('0', '4')
+                   and t.tx_pmt_flag in ('0', '2')
+                   and t.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+                   and t.dis_code = 'LCT00K001'
+                 group by t.dis_fund_tx_acct_no,
+                          t.fund_acct_no,
+                          t.fund_code,
+                          t.protocal_no,
+                          t.share_class,
+                          t.cust_bank_id,
+                          ta_trade_dt) c
+          left join trade.as_dis_fund_bal_frz d
+            on c.dis_fund_tx_acct_no = d.dis_fund_tx_acct_no
+           and c.fund_acct_no = d.fund_acct_no
+           and c.fund_code = d.fund_code
+           and c.protocal_no = d.protocal_no
+           and c.share_class = d.share_class
+           and c.cust_bank_id = d.cust_bank_id
+           and c.ta_trade_dt = d.ta_trade_dt
+          left join trade.as_dis_fund_bal_fast_frz f
+            on c.dis_fund_tx_acct_no = f.dis_fund_tx_acct_no
+           and c.fund_acct_no = f.fund_acct_no
+           and c.fund_code = f.fund_code
+           and c.protocal_no = f.protocal_no
+           and c.share_class = f.share_class
+           and c.cust_bank_id = f.cust_bank_id
+           and c.ta_trade_dt = f.ta_trade_dt
+         where c.frz_vol <>
+               (nvl(d.TODAY_FRZN_VOL, 0) + nvl(f.fast_frz_vol, 0));
+               
