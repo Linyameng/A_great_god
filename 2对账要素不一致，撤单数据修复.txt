@@ -1,0 +1,184 @@
+--1.备份要素不一致数据 
+create table tp_dis_tx_contract_t2024 as 
+select *
+  from trade.tp_dis_tx_contract b
+ where b.ta_trade_dt = to_char(sysdate+1, 'yyyyMMdd')
+   and b.dis_code = 'LCT00K001'
+   and b.mer_deal_no in (select a.mer_deal_no
+                           from trade.ep_lct_check a
+                          where a.check_dt = to_char(sysdate, 'yyyyMMdd')
+                            and a.check_results = '3'
+                            and a.is_handle_excp = '0'
+                            and a.lct_tx_pmt_flag = '6'
+                            and a.tx_pmt_flag = '0');
+
+
+create table tp_dis_tx_contract_t2022 as 
+select *
+  from trade.tp_dis_tx_contract b
+ where b.ta_trade_dt = to_char(sysdate+1, 'yyyyMMdd')
+   and b.dis_code = 'LCT00K001'
+   and b.mer_deal_no in (select a.mer_deal_no
+                           from trade.ep_lct_check a
+                          where a.check_dt = to_char(sysdate, 'yyyyMMdd')
+                            and a.check_results = '3'
+                            and a.is_handle_excp = '0'
+                            and a.lct_tx_pmt_flag = '6'
+                            and a.tx_pmt_flag = '2');
+
+
+--2.处理赎回撤单数据
+
+
+select * from tp_dis_tx_contract_t2024;
+
+select b.lct_tx_pmt_flag, b.tx_pmt_flag, count(1)
+  from trade.ep_lct_check b
+ where b.check_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.check_results = '3'
+   and b.is_handle_excp = '0'
+ group by b.lct_tx_pmt_flag, b.tx_pmt_flag;
+
+update tp_dis_tx_contract b
+   set b.tx_app_flag      = '2',
+       b.tx_pmt_flag      = '6',
+       b.tx_ack_flag      = '0',
+       b.trans_ratio      = '2',
+       b.trans_status     = '3',
+       b.tx_comp_flag     = '0',
+       b.dis_tx_comp_flag = '2',
+       b.dis_tx_chg_flag  = '3',
+       b.cancel_dtm       = to_date('20180204', 'yyyyMMdd')
+ where b.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.dis_code = 'LCT00K001'
+   and b.mer_deal_no in (select a.mer_deal_no
+                           from ep_lct_check a
+                          where a.check_dt = to_char(sysdate, 'yyyyMMdd')
+                            and a.check_results = '3'
+                            and a.busi_code = '024'
+                            and a.is_handle_excp = '0'
+                            and a.lct_tx_pmt_flag = '6'
+                            and a.tx_pmt_flag = '0');
+
+update tp_dis_trade_app_rec b
+   set b.tx_app_flag      = '2',
+       b.tx_pmt_flag      = '6',
+       b.tx_ack_flag      = '0',
+       b.trans_ratio      = '2',
+       b.trans_status     = '3',
+       b.tx_comp_flag     = '0',
+       b.dis_tx_comp_flag = '2',
+       b.dis_tx_chg_flag  = '3'
+ where b.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.dis_code = 'LCT00K001'
+   and b.contract_no in (select x.contract_no
+                           from ep_lct_check a, tp_dis_tx_contract_t2024 x
+                          where a.mer_deal_no = x.mer_deal_no
+                            and a.check_dt = to_char(sysdate, 'yyyyMMdd')
+                            and a.check_results = '3'
+                            and a.busi_code = '024'
+                            and a.is_handle_excp = '0'
+                            and a.lct_tx_pmt_flag = '6'
+                            and a.tx_pmt_flag = '0');
+
+update ep_lct_check a
+   set a.is_handle_excp = '1'
+ where a.check_dt = to_char(sysdate, 'yyyyMMdd')
+   and a.check_results = '3'
+   and a.busi_code = '024'
+   and a.is_handle_excp = '0'
+   and a.lct_tx_pmt_flag = '6'
+   and a.tx_pmt_flag = '0';
+
+select b.lct_tx_pmt_flag, b.tx_pmt_flag, count(1)
+  from trade.ep_lct_check b
+ where b.check_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.check_results = '3'
+   and b.is_handle_excp = '0'
+ group by b.lct_tx_pmt_flag, b.tx_pmt_flag;
+
+
+select *
+  from tp_dis_tx_contract x
+ where x.contract_no in (select a.contract_no
+                           from ep_lct_check a
+                          where a.check_dt = to_char(sysdate, 'yyyyMMdd')
+                            and a.check_results = '3'
+                            and a.busi_code = '024'
+                            and a.is_handle_excp = '1'
+                            and a.lct_tx_pmt_flag = '6'
+                            and a.tx_pmt_flag = '0');
+-----------------------------
+
+--3.处理申购撤单数据
+
+select * from tp_dis_tx_contract_t2022;
+
+select b.lct_tx_pmt_flag, b.tx_pmt_flag, count(1)
+  from trade.ep_lct_check b
+ where b.check_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.check_results = '3'
+   and b.is_handle_excp = '0'
+ group by b.lct_tx_pmt_flag, b.tx_pmt_flag;
+
+update tp_dis_tx_contract b
+   set b.tx_app_flag      = '2',
+       b.tx_pmt_flag      = '6',
+       b.tx_ack_flag      = '0',
+       b.trans_ratio      = '2',
+       b.trans_status     = '3',
+       b.tx_comp_flag     = '0',
+       b.dis_tx_comp_flag = '2',
+       b.dis_tx_chg_flag  = '3',
+       b.cancel_dtm       = to_date('20180204', 'yyyyMMdd')
+ where b.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.dis_code = 'LCT00K001'
+   and b.mer_deal_no in (select a.mer_deal_no
+                           from ep_lct_check a
+                          where a.check_dt = to_char(sysdate, 'yyyyMMdd')
+                            and a.check_results = '3'
+                            and a.busi_code = '022'
+                            and a.is_handle_excp = '0'
+                            and a.lct_tx_pmt_flag = '6'
+                            and a.tx_pmt_flag = '2');
+
+update tp_dis_trade_app_rec b
+   set b.tx_app_flag      = '2',
+       b.tx_pmt_flag      = '6',
+       b.tx_ack_flag      = '0',
+       b.trans_ratio      = '2',
+       b.trans_status     = '3',
+       b.tx_comp_flag     = '0',
+       b.dis_tx_comp_flag = '2',
+       b.dis_tx_chg_flag  = '3'
+ where b.ta_trade_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.dis_code = 'LCT00K001'
+   and b.contract_no in (select x.contract_no
+                           from ep_lct_check a, tp_dis_tx_contract_t2022 x
+                          where a.mer_deal_no = x.mer_deal_no
+                            and a.check_dt = to_char(sysdate, 'yyyyMMdd')
+                            and a.check_results = '3'
+                            and a.busi_code = '022'
+                            and a.is_handle_excp = '0'
+                            and a.lct_tx_pmt_flag = '6'
+                            and a.tx_pmt_flag = '2');
+
+update ep_lct_check a
+   set a.is_handle_excp = '1'
+ where a.check_dt = to_char(sysdate, 'yyyyMMdd')
+   and a.check_results = '3'
+   and a.busi_code = '022'
+   and a.is_handle_excp = '0'
+   and a.lct_tx_pmt_flag = '6'
+   and a.tx_pmt_flag = '2';
+
+select b.lct_tx_pmt_flag, b.tx_pmt_flag, count(1)
+  from trade.ep_lct_check b
+ where b.check_dt = to_char(sysdate, 'yyyyMMdd')
+   and b.check_results = '3'
+   and b.is_handle_excp = '0'
+ group by b.lct_tx_pmt_flag, b.tx_pmt_flag;
+
+ 
+
+ 
